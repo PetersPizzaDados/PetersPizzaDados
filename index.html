@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego de Dados - Pizza Gratis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: "Inter", sans-serif;
+        }
+        @keyframes rotateDice {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .rolling-animation {
+            animation: rotateDice 0.875s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-stone-800 text-stone-200 min-h-screen flex items-center justify-center p-4">
+    <div id="app-container" class="bg-stone-700 p-8 rounded-xl shadow-lg w-full max-w-md">
+        <!-- Pantalla 1 -->
+        <div id="screen1" class="text-center" style="display: block;">
+            <img src="./img/LOGO.png" class="mx-auto mb-6 ">
+            <h1 class="text-3xl font-bold mb-2 text-amber-400">Ingresar Código</h1>
+            <p class="text-lg mb-6 text-stone-300">¡Gana una pizza gratis o llévate tu pedido sin costo!</p>
+            <input type="text" id="codeInput" placeholder="Introduce tu código aquí"
+                   class="w-full p-3 mb-4 bg-stone-600 border border-stone-500 rounded-lg text-stone-100 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-500">
+            <button id="launchButton"
+                    class="w-full bg-amber-500 text-stone-900 font-bold py-3 px-6 rounded-lg hover:bg-amber-600 transition duration-300 ease-in-out shadow-md">
+                Lanzar
+            </button>
+        </div>
+
+        <!-- Pantalla 2 -->
+        <div id="screen2" class="text-center" style="display: none;">
+            <h1 class="text-3xl font-bold mb-6 text-amber-400">Resultado de los Dados</h1>
+            <p id="rollCountDisplay" class="text-lg mb-4">Lanzamientos: 0/3</p>
+            <p class="mb-8">Presiona el botón para lanzar los dados.</p>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-6">
+                <span id="dice1" class=" p-2 rounded-xl shadow-inner w-28 h-28 flex items-center justify-center overflow-hidden">
+                    <img src="https://placehold.co/100x100/A8A29E/FFFFFF?text=1" class="w-full h-full object-contain">
+                </span>
+                <button id="rollDiceButton"
+                        class="bg-amber-500 text-stone-900 font-bold py-4 px-8 rounded-xl hover:bg-amber-600 transition duration-300 ease-in-out shadow-md text-xl disabled:bg-stone-500 disabled:text-stone-300 disabled:cursor-not-allowed">
+                    Lanzar Dados
+                </button>
+                <span id="dice2" class=" p-2 rounded-xl shadow-inner w-28 h-28 flex items-center justify-center overflow-hidden">
+                    <img src="https://placehold.co/100x100/A8A29E/FFFFFF?text=1" class="w-full h-full object-contain">
+                </span>
+            </div>
+        </div>
+
+        <!-- Modal de Mensaje -->
+        <div id="messageModal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50" style="display: none;">
+            <div class="bg-stone-700 p-8 rounded-xl shadow-2xl text-center border border-amber-500 w-full max-w-sm">
+                <p id="messageText" class="text-xl font-semibold mb-6 text-stone-100"></p>
+                <button id="closeMessageButton"
+                        class="bg-amber-500 text-stone-900 font-bold py-2 px-5 rounded-lg hover:bg-amber-600 transition duration-300 ease-in-out shadow-md">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-analytics.js";
+    import { getFirestore, doc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDevwCnL7xn7kQ72a7LabB4fQFBrP9GgP4",
+        authDomain: "dadospeterpizza.firebaseapp.com",
+        projectId: "dadospeterpizza",
+        storageBucket: "dadospeterpizza.appspot.com",
+        messagingSenderId: "679723178912",
+        appId: "1:679723178912:web:dc24ecfec8b8186af122c5",
+        measurementId: "G-S7ESEMD1Q5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getFirestore(app);
+
+    const screen1 = document.getElementById('screen1');
+    const screen2 = document.getElementById('screen2');
+    const launchButton = document.getElementById('launchButton');
+    const rollDiceButton = document.getElementById('rollDiceButton');
+    const messageModal = document.getElementById('messageModal');
+    const messageText = document.getElementById('messageText');
+    const closeMessageButton = document.getElementById('closeMessageButton');
+    const codeInput = document.getElementById('codeInput');
+    const dice1Element = document.getElementById('dice1');
+    const dice2Element = document.getElementById('dice2');
+    const rollCountDisplay = document.getElementById('rollCountDisplay');
+
+    const diceImages = {
+        1: "img/1.png",
+        2: "img/2.png",
+        3: "img/3.png",
+        4: "img/4.png",
+        5: "img/5.png",
+        6: "img/6.png"
+    };
+
+    let rollInterval;
+    let rollTimeout;
+    let rollCount = 0;
+    let currentCodeId = null;
+
+    function showScreen(screen) {
+        screen1.style.display = 'none';
+        screen2.style.display = 'none';
+        screen.style.display = 'block';
+    }
+
+    function showMessage(msg, btn = "Cerrar") {
+        messageText.textContent = msg;
+        closeMessageButton.textContent = btn;
+        messageModal.style.display = 'flex';
+    }
+
+    function hideMessage() {
+        messageModal.style.display = 'none';
+    }
+
+    function getRandomDiceImage() {
+        const val = Math.floor(Math.random() * 6) + 1;
+        return diceImages[val];
+    }
+
+    function getRandomDiceImageFinal() {
+        const val = Math.floor(Math.random() * 3) + 4; // 4, 5 o 6
+        return diceImages[val];
+    }
+
+    function updateRollCountDisplay() {
+        rollCountDisplay.textContent = `Lanzamientos: ${rollCount}/3`;
+    }
+
+    launchButton.addEventListener('click', async () => {
+        const code = codeInput.value.trim();
+        if (!code) return showMessage("Por favor ingresa un código.", "Intentar de nuevo");
+        const ref = doc(db, "Codigos_Cupones", code);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return showMessage("Código incorrecto o no registrado.", "Intentar de nuevo");
+        const data = snap.data();
+        if (data.Utilizado) return showMessage("Este código ya fue utilizado.", "Intentar de nuevo");
+        if (data.CantidadLanzamientos >= 3) return showMessage("Límite de lanzamientos alcanzado.", "Intentar de nuevo");
+        currentCodeId = code;
+        rollCount = data.CantidadLanzamientos;
+        updateRollCountDisplay();
+        showScreen(screen2);
+        dice1Element.innerHTML = `<img src="${diceImages[1]}" class="w-full h-full object-contain">`;
+        dice2Element.innerHTML = `<img src="${diceImages[1]}" class="w-full h-full object-contain">`;
+    });
+
+    rollDiceButton.addEventListener('click', () => {
+        if (rollCount >= 3) return showMessage("Has alcanzado el límite de lanzamientos.", "Volver a Iniciar");
+        rollDiceButton.disabled = true;
+        dice1Element.classList.add('rolling-animation');
+        dice2Element.classList.add('rolling-animation');
+        clearInterval(rollInterval);
+        clearTimeout(rollTimeout);
+        rollCount++;
+        updateRollCountDisplay();
+
+        rollInterval = setInterval(() => {
+            dice1Element.innerHTML = `<img src="${getRandomDiceImage()}" class="w-full h-full object-contain">`;
+            dice2Element.innerHTML = `<img src="${getRandomDiceImage()}" class="w-full h-full object-contain">`;
+        }, 350);
+
+        rollTimeout = setTimeout(async () => {
+            clearInterval(rollInterval);
+            dice1Element.classList.remove('rolling-animation');
+            dice2Element.classList.remove('rolling-animation');
+
+            const img1 = getRandomDiceImageFinal(); // 4 a 6
+            const img2 = getRandomDiceImageFinal();
+            const num1 = parseInt(img1.match(/(\d)\.png$/)[1]);
+            const num2 = parseInt(img2.match(/(\d)\.png$/)[1]);
+
+            dice1Element.innerHTML = `<img src="${img1}" class="w-full h-full object-contain">`;
+            dice2Element.innerHTML = `<img src="${img2}" class="w-full h-full object-contain">`;
+
+            const ref = doc(db, "Codigos_Cupones", currentCodeId);
+            const dataToUpdate = { CantidadLanzamientos: rollCount };
+
+            if (num1 === 6 && num2 === 6) {
+                dataToUpdate.Ganador = true;
+                dataToUpdate.Premio = "Pizza Gratis";
+                dataToUpdate.Utilizado = true;
+            } else if (rollCount >= 3) {
+                dataToUpdate.Utilizado = true;
+            }
+
+            await updateDoc(ref, dataToUpdate);
+
+            if (num1 === 6 && num2 === 6) {
+                setTimeout(() => showMessage("¡HAZ GANADO UNA PIZZA GRATIS!", "RECLAMAR"), 1000);
+                  dataToUpdate.Premio = "Pizza Gratis";
+            } else if (rollCount >= 3) {
+                setTimeout(() => showMessage("Has usado tus 3 lanzamientos. Inténtalo de nuevo.", "Volver a Iniciar"), 1000);
+            }
+
+            rollDiceButton.disabled = false;
+        }, 4500);
+    });
+
+    closeMessageButton.addEventListener('click', () => {
+        const msg = messageText.textContent;
+
+        if (msg.includes("GANADO")) {
+            // Abrir WhatsApp con mensaje de ganador
+            const phone = "573167955571";
+            const text = `¡Hola! He GANADO una Pizza Lanzando los Dados. Código usado: ${currentCodeId}`;
+            const whatsappURL = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+            window.open(whatsappURL, '_blank');
+        }
+
+        if (msg.includes("GANADO") || msg.includes("lanzamientos")) {
+            hideMessage();
+            showScreen(screen1);
+            rollCount = 0;
+            currentCodeId = null;
+            updateRollCountDisplay();
+            codeInput.value = '';
+        } else {
+            hideMessage();
+        }
+    });
+
+    showScreen(screen1);
+    updateRollCountDisplay();
+</script>
+
+</body>
+</html>
